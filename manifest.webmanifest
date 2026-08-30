@@ -1,0 +1,11 @@
+{
+  "name": "農作業日誌",
+  "short_name": "農作業日誌",
+  "description": "月相と予定管理に対応した農作業日誌",
+  "lang": "ja",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#f4f5f2",
+  "theme_color": "#386a43"
+}
