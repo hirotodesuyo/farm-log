@@ -1,0 +1,472 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="theme-color" content="#f4f5f2">
+  <title>農作業日誌</title>
+  <link rel="manifest" href="manifest.webmanifest">
+  <style>
+    :root{
+      --bg:#f4f5f2;
+      --card:#ffffff;
+      --text:#20251f;
+      --sub:#71766f;
+      --line:#e2e5df;
+      --accent:#386a43;
+      --accent-soft:#e8f0e9;
+      --danger:#a23d3d;
+      --today:#f3ead8;
+      --shadow:0 2px 10px rgba(0,0,0,.06);
+    }
+    *{box-sizing:border-box}
+    html,body{margin:0;padding:0;background:var(--bg);color:var(--text)}
+    body{
+      font-family:-apple-system,BlinkMacSystemFont,"Helvetica Neue","Hiragino Sans","Yu Gothic",sans-serif;
+      -webkit-tap-highlight-color:transparent;
+    }
+    header{
+      position:sticky;top:0;z-index:20;
+      padding:calc(12px + env(safe-area-inset-top)) 14px 11px;
+      background:rgba(244,245,242,.94);
+      backdrop-filter:blur(14px);
+      border-bottom:1px solid var(--line);
+    }
+    .header-row{display:flex;justify-content:space-between;align-items:center;gap:10px}
+    h1{font-size:21px;margin:0}
+    .sub{font-size:12px;color:var(--sub);margin-top:3px}
+    main{max-width:760px;margin:auto;padding:12px 12px calc(95px + env(safe-area-inset-bottom))}
+    .card{background:var(--card);border-radius:20px;padding:14px;box-shadow:var(--shadow);margin-bottom:12px}
+    .month-head{display:grid;grid-template-columns:46px 1fr 46px;align-items:center;margin-bottom:10px}
+    .month-title{text-align:center;font-size:20px;font-weight:800}
+    .iconbtn{
+      border:none;background:transparent;font-size:24px;padding:8px;border-radius:12px;color:var(--text)
+    }
+    .weekdays,.calendar{display:grid;grid-template-columns:repeat(7,1fr)}
+    .weekdays div{
+      text-align:center;font-size:12px;color:var(--sub);padding:6px 0 7px
+    }
+    .day{
+      min-height:70px;border-top:1px solid var(--line);border-left:1px solid var(--line);
+      padding:5px 4px;position:relative;background:#fff;overflow:hidden
+    }
+    .day:nth-child(7n){border-right:1px solid var(--line)}
+    .calendar .day:nth-last-child(-n+7){border-bottom:1px solid var(--line)}
+    .day.empty{background:#fafafa}
+    .day.selected{outline:2px solid var(--accent);outline-offset:-2px;background:var(--accent-soft)}
+    .day.today:not(.selected){background:var(--today)}
+    .daynum{font-size:13px;font-weight:700;line-height:1}
+    .icons{margin-top:6px;font-size:15px;line-height:1.25;letter-spacing:-1px;word-break:break-all}
+    .sum{font-size:10px;color:var(--sub);margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    .moon{font-size:11px;margin-top:2px;font-weight:700}
+    .planmark{font-size:11px;color:#725b1f;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    .planned{border-left:4px solid #b69336;padding-left:9px}
+    .plan-badge{font-size:11px;background:#f5edd4;color:#725b1f;border-radius:99px;padding:3px 7px;margin-left:5px}
+    .section-title{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px}
+    .section-title h2{font-size:18px;margin:0}
+    .pill{font-size:12px;color:var(--accent);background:var(--accent-soft);padding:6px 9px;border-radius:99px}
+    .entry{padding:11px 0;border-bottom:1px solid var(--line)}
+    .entry:last-child{border-bottom:none}
+    .entry-title{font-weight:800;font-size:15px}
+    .entry-meta{font-size:12px;color:var(--sub);margin-top:4px}
+    .entry-note{font-size:14px;white-space:pre-wrap;margin-top:7px}
+    .entry-photo{max-width:100%;border-radius:13px;margin-top:8px}
+    .emptymsg{font-size:14px;color:var(--sub);padding:8px 0}
+    .fab{
+      position:fixed;right:18px;bottom:calc(72px + env(safe-area-inset-bottom));z-index:30;
+      width:58px;height:58px;border-radius:50%;border:none;background:var(--accent);color:#fff;
+      font-size:34px;line-height:58px;box-shadow:0 5px 18px rgba(0,0,0,.2)
+    }
+    nav{
+      position:fixed;left:0;right:0;bottom:0;z-index:25;
+      background:rgba(255,255,255,.97);backdrop-filter:blur(14px);border-top:1px solid var(--line);
+      padding:7px 10px calc(7px + env(safe-area-inset-bottom));display:flex
+    }
+    nav button{flex:1;border:none;background:transparent;padding:6px;font-size:12px;color:var(--text)}
+    .navicon{display:block;font-size:21px;margin-bottom:2px}
+    .hidden{display:none!important}
+    label{display:block;font-size:12px;color:var(--sub);margin:10px 0 5px}
+    input,select,textarea{
+      width:100%;font-size:16px;border:1px solid var(--line);background:#fff;color:var(--text);
+      border-radius:13px;padding:12px
+    }
+    textarea{min-height:92px;resize:vertical}
+    .row{display:grid;grid-template-columns:1fr 1fr;gap:9px}
+    .type-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:9px}
+    .type-btn{
+      border:1px solid var(--line);background:#fff;border-radius:15px;padding:13px 10px;font-size:15px;text-align:left
+    }
+    .type-btn span{font-size:23px;display:block;margin-bottom:3px}
+    .primary{
+      width:100%;border:none;border-radius:14px;background:var(--accent);color:white;
+      font-size:16px;font-weight:800;padding:14px;margin-top:13px
+    }
+    .secondary{
+      width:100%;border:1px solid var(--line);border-radius:14px;background:#fff;color:var(--text);
+      font-size:15px;padding:12px;margin-top:8px
+    }
+    .toolbar{display:flex;gap:8px;margin-top:8px}
+    .toolbar button{
+      border:1px solid var(--line);background:#fff;border-radius:11px;padding:8px 10px;font-size:13px
+    }
+    .danger{color:var(--danger)}
+    .stats{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:10px}
+    .stat{background:#fafafa;border:1px solid var(--line);border-radius:14px;padding:10px;text-align:center}
+    .stat strong{display:block;font-size:18px}
+    .stat span{font-size:11px;color:var(--sub)}
+  </style>
+</head>
+<body>
+<header>
+  <div class="header-row">
+    <div>
+      <h1>農作業日誌</h1>
+      <div class="sub" id="todayText"></div>
+    </div>
+    <button class="iconbtn" onclick="goToday()" aria-label="今日">◎</button>
+  </div>
+</header>
+
+<main>
+  <section id="calendarView">
+    <div class="card">
+      <div class="month-head">
+        <button class="iconbtn" onclick="moveMonth(-1)">‹</button>
+        <div class="month-title" id="monthTitle"></div>
+        <button class="iconbtn" onclick="moveMonth(1)">›</button>
+      </div>
+      <div class="weekdays">
+        <div>日</div><div>月</div><div>火</div><div>水</div><div>木</div><div>金</div><div>土</div>
+      </div>
+      <div class="calendar" id="calendar"></div>
+    </div>
+
+    <div class="card">
+      <div class="section-title">
+        <h2 id="selectedTitle"></h2>
+        <span class="pill" id="entryCount"></span>
+      </div>
+      <div id="dayEntries"></div>
+    </div>
+  </section>
+
+  <section id="typeView" class="hidden">
+    <div class="card">
+      <div class="section-title"><h2 id="typeDateTitle">作業を追加</h2></div>
+      <div class="type-grid">
+        <button class="type-btn" onclick="openForm('収穫','🍓')"><span>🍓</span>収穫</button>
+        <button class="type-btn" onclick="openForm('灌水','💧')"><span>💧</span>灌水</button>
+        <button class="type-btn" onclick="openForm('液肥','🧪')"><span>🧪</span>液肥</button>
+        <button class="type-btn" onclick="openForm('防除','🐛')"><span>🐛</span>防除</button>
+        <button class="type-btn" onclick="openForm('生育','🌱')"><span>🌱</span>生育</button>
+        <button class="type-btn" onclick="openForm('その他','🔧')"><span>🔧</span>その他</button>
+        <button class="type-btn" onclick="openPlanForm()"><span>🗓️</span>予定</button>
+      </div>
+      <button class="secondary" onclick="showCalendar()">戻る</button>
+    </div>
+  </section>
+
+  <section id="formView" class="hidden">
+    <div class="card">
+      <div class="section-title"><h2 id="formTitle">記録</h2></div>
+      <div class="row">
+        <div><label>日付</label><input type="date" id="date"></div>
+        <div><label>時刻</label><input type="time" id="time"></div>
+      </div>
+      <label>作物</label>
+      <select id="crop">
+        <option>いちご</option><option>メロン</option><option>その他</option>
+      </select>
+      <label>場所</label>
+      <select id="place">
+        <option>1号ハウス</option><option>2号ハウス</option><option>3号ハウス</option>
+        <option>育苗</option><option>露地・その他</option>
+      </select>
+      <div id="dynamicFields"></div>
+      <div id="planOptions" class="hidden">
+        <label>月相を基準にする</label>
+        <select id="moonRule" onchange="applyMoonRuleToDate()">
+          <option value="">指定なし</option>
+          <option value="new">新月 🌑</option>
+          <option value="full">満月 🌕</option>
+          <option value="before_new">新月の前</option>
+          <option value="after_new">新月の後</option>
+          <option value="before_full">満月の前</option>
+          <option value="after_full">満月の後</option>
+        </select>
+        <label>基準日から何日前・何日後</label>
+        <input type="number" id="moonOffset" value="0" min="0" max="14" step="1" oninput="applyMoonRuleToDate()">
+        <div class="sub" id="moonDateHint" style="margin-top:6px"></div>
+      </div>
+      <label>メモ</label>
+      <textarea id="note" placeholder="葉色、病害虫、気づいたことなど"></textarea>
+      <label>写真</label>
+      <input type="file" id="photo" accept="image/*" capture="environment">
+      <button class="primary" onclick="saveEntry()">保存</button>
+      <button class="secondary" onclick="showCalendar()">キャンセル</button>
+    </div>
+  </section>
+
+  <section id="historyView" class="hidden">
+    <div class="card">
+      <div class="section-title"><h2>履歴・検索</h2></div>
+      <div class="row">
+        <input id="searchText" placeholder="農薬名など" oninput="renderHistory()">
+        <select id="filterType" onchange="renderHistory()">
+          <option value="">すべて</option>
+          <option>収穫</option><option>灌水</option><option>液肥</option>
+          <option>防除</option><option>生育</option><option>その他</option><option>予定</option>
+        </select>
+      </div>
+      <div class="toolbar">
+        <button onclick="exportCSV()">CSV出力</button>
+        <button class="danger" onclick="clearAll()">全削除</button>
+      </div>
+      <div id="historyEntries"></div>
+    </div>
+  </section>
+</main>
+
+<button class="fab" id="fab" onclick="openTypeChooser()" aria-label="追加">＋</button>
+
+<nav>
+  <button onclick="showCalendar()"><span class="navicon">📅</span>カレンダー</button>
+  <button onclick="showHistory()"><span class="navicon">🔎</span>履歴</button>
+</nav>
+
+<script>
+const $ = id => document.getElementById(id);
+let currentMonth = new Date();
+currentMonth.setDate(1);
+let selectedDate = localDate();
+let currentType="", currentEmoji="";
+
+function pad(n){return String(n).padStart(2,"0")}
+function localDate(d=new Date()){return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`}
+function jpDate(dateStr){
+  const [y,m,d]=dateStr.split("-").map(Number);
+  const dt=new Date(y,m-1,d);
+  return new Intl.DateTimeFormat("ja-JP",{month:"long",day:"numeric",weekday:"short"}).format(dt);
+}
+function localTime(d=new Date()){return `${pad(d.getHours())}:${pad(d.getMinutes())}`}
+function getEntries(){try{return JSON.parse(localStorage.getItem("farmLogEntries")||"[]")}catch(e){return []}}
+function setEntries(v){localStorage.setItem("farmLogEntries",JSON.stringify(v))}
+function show(id){
+  ["calendarView","typeView","formView","historyView"].forEach(v=>$(v).classList.add("hidden"));
+  $(id).classList.remove("hidden");
+  $("fab").classList.toggle("hidden", id!=="calendarView");
+}
+function showCalendar(){show("calendarView");renderCalendar();renderSelectedDay()}
+function showHistory(){show("historyView");renderHistory()}
+function goToday(){
+  const t=new Date();currentMonth=new Date(t.getFullYear(),t.getMonth(),1);selectedDate=localDate(t);showCalendar()
+}
+function moveMonth(delta){
+  currentMonth=new Date(currentMonth.getFullYear(),currentMonth.getMonth()+delta,1);
+  selectedDate=localDate(currentMonth);
+  renderCalendar();renderSelectedDay();
+}
+
+function renderCalendar(){
+  const y=currentMonth.getFullYear(), m=currentMonth.getMonth();
+  $("monthTitle").textContent=`${y}年 ${m+1}月`;
+  const first=new Date(y,m,1).getDay();
+  const days=new Date(y,m+1,0).getDate();
+  const entries=getEntries();
+  let html="";
+  for(let i=0;i<first;i++) html+=`<div class="day empty"></div>`;
+  for(let d=1;d<=days;d++){
+    const ds=`${y}-${pad(m+1)}-${pad(d)}`;
+    const es=entries.filter(e=>e.date===ds);
+    const unique=[...new Set(es.filter(e=>!e.planned).map(e=>e.emoji||"•"))].slice(0,5).join("");
+    const plans=es.filter(e=>e.planned);
+    const harvest=es.filter(e=>e.type==="収穫" && !e.planned).reduce((s,e)=>s+(parseFloat(e.amount)||0),0);
+    const moon=moonLabelForDate(ds);
+    const cls=["day",ds===selectedDate?"selected":"",ds===localDate()?"today":""].join(" ");
+    html+=`<div class="${cls}" onclick="selectDate('${ds}')">
+      <div class="daynum">${d}</div>
+      ${moon?`<div class="moon">${moon}</div>`:""}
+      <div class="icons">${unique}</div>
+      ${plans.length?`<div class="planmark">🗓️ ${esc(plans[0].detail||plans[0].type)}${plans.length>1?` +${plans.length-1}`:""}</div>`:""}
+      ${harvest?`<div class="sum">🍓 ${harvest.toFixed(1)}kg</div>`:""}
+    </div>`;
+  }
+  $("calendar").innerHTML=html;
+}
+function selectDate(ds){
+  selectedDate=ds;
+  renderCalendar();renderSelectedDay();
+}
+function renderSelectedDay(){
+  $("selectedTitle").textContent=jpDate(selectedDate);
+  const es=getEntries().filter(e=>e.date===selectedDate).sort((a,b)=>(a.time||"").localeCompare(b.time||""));
+  $("entryCount").textContent=`${es.length}件`;
+  $("dayEntries").innerHTML=es.length?es.map(entryHTML).join(""):`<div class="emptymsg">この日の記録はありません。右下の＋から追加できます。</div>`;
+}
+function openTypeChooser(){
+  $("typeDateTitle").textContent=`${jpDate(selectedDate)} に追加`;
+  show("typeView");
+}
+function openPlanForm(){
+  currentType="予定"; currentEmoji="🗓️";
+  $("formTitle").textContent="🗓️ 予定を追加";
+  $("date").value=selectedDate;
+  $("time").value="";
+  $("dynamicFields").innerHTML=
+    `<label>予定内容</label><input type="text" id="detail" placeholder="例 防除・追肥・葉かき">
+     <label>作業分類</label>
+     <select id="amount">
+       <option value="">指定なし</option><option>収穫</option><option>灌水</option><option>液肥</option>
+       <option>防除</option><option>生育</option><option>その他</option>
+     </select>`;
+  $("planOptions").classList.remove("hidden");
+  $("moonRule").value="";
+  $("moonOffset").value="0";
+  $("moonDateHint").textContent="";
+  $("note").value="";
+  $("photo").value="";
+  show("formView");
+}
+function openForm(type,emoji){
+  currentType=type;currentEmoji=emoji;
+  $("planOptions").classList.add("hidden");
+  $("formTitle").textContent=`${emoji} ${type}`;
+  $("date").value=selectedDate;
+  $("time").value=localTime();
+  $("dynamicFields").innerHTML=fieldsFor(type);
+  $("note").value="";
+  $("photo").value="";
+  show("formView");
+}
+function fieldsFor(type){
+  const field=(label,id,ph="",type="text")=>`<label>${label}</label><input type="${type}" id="${id}" placeholder="${ph}">`;
+  if(type==="収穫") return field("収穫量(kg)","amount","例 12.5","number")+field("規格外(kg)","subamount","例 2.0","number")+field("出荷先","detail","JA・直売・加工など");
+  if(type==="灌水") return field("灌水時間(分)","amount","例 3","number")+field("回数","subamount","例 3","number")+field("給液EC","detail","例 0.7");
+  if(type==="液肥") return field("肥料名","detail","例 タンクミックスF")+field("使用量","amount","例 500mL")+field("希釈倍率 / EC","subamount","例 1000倍 / EC0.7");
+  if(type==="防除") return field("農薬名","detail","例 トリフミン")+field("希釈倍率","amount","例 3000倍")+field("散布量","subamount","例 100L");
+  if(type==="生育") return field("観察項目","detail","例 葉色・果実肥大・病害虫")+field("温度 / ECなど","amount","例 最高28℃、排液EC0.5");
+  return field("作業内容","detail","例 誘引・草刈り・清掃")+field("作業時間","amount","例 2時間");
+}
+function val(id){return $(id)?.value||""}
+async function saveEntry(){
+  const file=$("photo").files[0];
+  let photo="";
+  if(file){
+    photo=await new Promise(resolve=>{
+      const r=new FileReader();r.onload=()=>resolve(r.result);r.readAsDataURL(file);
+    });
+  }
+  const entry={
+    id:Date.now(),type:currentType,emoji:currentEmoji,date:val("date"),time:val("time"),
+    crop:val("crop"),place:val("place"),detail:val("detail"),amount:val("amount"),
+    subamount:val("subamount"),note:val("note"),photo,
+    planned: currentType==="予定",
+    moonRule: currentType==="予定" ? val("moonRule") : "",
+    moonOffset: currentType==="予定" ? (parseInt(val("moonOffset")||"0",10)||0) : 0
+  };
+  const es=getEntries();es.unshift(entry);setEntries(es);
+  selectedDate=entry.date;
+  const [y,m]=selectedDate.split("-").map(Number);currentMonth=new Date(y,m-1,1);
+  showCalendar();
+}
+function entryHTML(e){
+  const bits=[e.crop,e.place,e.detail,e.amount,e.subamount].filter(Boolean).join(" / ");
+  const moonRuleText = e.moonRule ? ` / ${moonRuleName(e.moonRule)}${e.moonOffset?` ${e.moonOffset>0?"+":""}${e.moonOffset}日`:""}` : "";
+  return `<div class="entry ${e.planned?"planned":""}">
+    <div class="entry-title">${e.emoji||""} ${esc(e.type)} ${e.planned?`<span class="plan-badge">予定</span>`:""} <span style="font-weight:500;color:var(--sub)">${esc(e.time||"")}</span></div>
+    <div class="entry-meta">${esc(bits)}${esc(moonRuleText)}</div>
+    ${e.note?`<div class="entry-note">${esc(e.note)}</div>`:""}
+    ${e.photo?`<img class="entry-photo" src="${e.photo}">`:""}
+    <div class="toolbar"><button onclick="deleteEntry(${e.id})">削除</button></div>
+  </div>`;
+}
+function renderHistory(){
+  const q=$("searchText").value.trim().toLowerCase(), f=$("filterType").value;
+  const es=getEntries().filter(e=>{
+    const text=JSON.stringify(e).toLowerCase();
+    return (!q||text.includes(q))&&(!f||e.type===f);
+  }).sort((a,b)=>(b.date+b.time).localeCompare(a.date+a.time));
+  $("historyEntries").innerHTML=es.length?es.map(entryHTML).join(""):`<div class="emptymsg">該当する記録がありません。</div>`;
+}
+function deleteEntry(id){
+  if(!confirm("この記録を削除しますか？"))return;
+  setEntries(getEntries().filter(e=>e.id!==id));
+  renderCalendar();renderSelectedDay();renderHistory();
+}
+function clearAll(){
+  if(!confirm("すべての記録を削除します。元に戻せません。"))return;
+  localStorage.removeItem("farmLogEntries");renderHistory();renderCalendar();renderSelectedDay();
+}
+function exportCSV(){
+  const rows=[["日付","時刻","作業","作物","場所","詳細","量1","量2","メモ"]];
+  getEntries().slice().sort((a,b)=>(a.date+a.time).localeCompare(b.date+b.time)).forEach(e=>
+    rows.push([e.date,e.time,e.type,e.crop,e.place,e.detail,e.amount,e.subamount,e.note])
+  );
+  const csv=rows.map(r=>r.map(v=>`"${String(v??"").replaceAll('"','""')}"`).join(",")).join("\n");
+  const blob=new Blob(["\ufeff"+csv],{type:"text/csv;charset=utf-8"});
+  const a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download=`農作業日誌_${localDate()}.csv`;a.click();
+}
+function esc(s){return String(s??"").replace(/[&<>"']/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[m]))}
+
+
+// Simple astronomical approximation for display purposes.
+// Reference new moon epoch: 2000-01-06 18:14 UTC, synodic month 29.530588853 days.
+function moonAge(dateStr){
+  const [y,m,d]=dateStr.split("-").map(Number);
+  const t=Date.UTC(y,m-1,d,12,0,0);
+  const epoch=Date.UTC(2000,0,6,18,14,0);
+  const syn=29.530588853;
+  let age=((t-epoch)/86400000)%syn;
+  if(age<0) age+=syn;
+  return age;
+}
+function moonLabelForDate(dateStr){
+  const a=moonAge(dateStr), syn=29.530588853;
+  // Mark the nearest civil date around new/full moon.
+  if(a<0.75 || a>syn-0.75) return "🌑 新月";
+  if(Math.abs(a-syn/2)<0.75) return "🌕 満月";
+  return "";
+}
+function moonRuleName(v){
+  return ({
+    new:"新月", full:"満月",
+    before_new:"新月の前", after_new:"新月の後",
+    before_full:"満月の前", after_full:"満月の後"
+  })[v]||"";
+}
+
+function nearestMoonDate(anchorDate, phase){
+  const anchor=new Date(`${anchorDate}T12:00:00`);
+  let best=null, bestDistance=Infinity;
+  for(let i=-16;i<=16;i++){
+    const candidate=new Date(anchor);
+    candidate.setDate(anchor.getDate()+i);
+    const ds=localDate(candidate);
+    const age=moonAge(ds), target=phase==="full"?29.530588853/2:0;
+    const distance=phase==="new"
+      ? Math.min(age,29.530588853-age)
+      : Math.abs(age-target);
+    if(distance<bestDistance){bestDistance=distance;best=candidate}
+  }
+  return best;
+}
+function applyMoonRuleToDate(){
+  const rule=val("moonRule");
+  if(!rule){$("moonDateHint").textContent="";return}
+  const phase=rule.includes("full")?"full":"new";
+  const base=nearestMoonDate(val("date")||selectedDate,phase);
+  const offset=Math.max(0,Math.min(14,parseInt(val("moonOffset")||"0",10)||0));
+  const direction=rule.startsWith("before_")?-1:rule.startsWith("after_")?1:0;
+  base.setDate(base.getDate()+direction*offset);
+  $("date").value=localDate(base);
+  $("moonDateHint").textContent=`${moonRuleName(rule)}を基準に ${jpDate(localDate(base))} に設定`;
+}
+
+$("todayText").textContent=new Intl.DateTimeFormat("ja-JP",{dateStyle:"full"}).format(new Date());
+showCalendar();
+if("serviceWorker" in navigator){
+  window.addEventListener("load",()=>navigator.serviceWorker.register("./sw.js").catch(()=>{}));
+}
+</script>
+</body>
+</html>
