@@ -114,6 +114,12 @@
     .stat{background:#fafafa;border:1px solid var(--line);border-radius:14px;padding:10px;text-align:center}
     .stat strong{display:block;font-size:18px}
     .stat span{font-size:11px;color:var(--sub)}
+    .sync-status{
+      display:block;border:0;background:transparent;padding:3px 0 0;margin:0;
+      color:var(--sub);font-size:11px;text-align:left
+    }
+    .sync-status.ok{color:var(--accent)}
+    .sync-status.warn{color:#8a651f}
   </style>
 </head>
 <body>
@@ -122,6 +128,7 @@
     <div>
       <h1>農作業日誌</h1>
       <div class="sub" id="todayText"></div>
+      <button class="sync-status" id="syncStatus" onclick="initCloudSync(true)">端末内保存</button>
     </div>
     <button class="iconbtn" onclick="goToday()" aria-label="今日">◎</button>
   </div>
@@ -249,8 +256,122 @@ function jpDate(dateStr){
   return new Intl.DateTimeFormat("ja-JP",{month:"long",day:"numeric",weekday:"short"}).format(dt);
 }
 function localTime(d=new Date()){return `${pad(d.getHours())}:${pad(d.getMinutes())}`}
-function getEntries(){try{return JSON.parse(localStorage.getItem("farmLogEntries")||"[]")}catch(e){return []}}
-function setEntries(v){localStorage.setItem("farmLogEntries",JSON.stringify(v))}
+const ENTRY_KEY="farmLogEntries";
+const PENDING_KEY="farmLogPendingOps";
+const MIGRATED_KEY="farmLogCloudMigrated";
+let syncReady=false, syncPromise=null;
+
+function getEntries(){try{return JSON.parse(localStorage.getItem(ENTRY_KEY)||"[]")}catch(e){return []}}
+function setEntries(v){localStorage.setItem(ENTRY_KEY,JSON.stringify(v))}
+function getPending(){try{return JSON.parse(localStorage.getItem(PENDING_KEY)||"[]")}catch(e){return []}}
+function setPending(v){localStorage.setItem(PENDING_KEY,JSON.stringify(v))}
+function setSyncStatus(text,state=""){
+  const el=$("syncStatus");
+  if(!el)return;
+  el.textContent=text;
+  el.className="sync-status "+state;
+}
+async function cloudFetch(path,options={}){
+  return fetch(path,{cache:"no-store",credentials:"same-origin",...options});
+}
+async function authenticateCloud(){
+  const code=prompt("同期コードを入力してください（端末ごとに初回のみ）");
+  if(!code)return false;
+  const response=await cloudFetch("/api/auth",{
+    method:"POST",
+    headers:{"Content-Type":"application/json"},
+    body:JSON.stringify({code})
+  });
+  if(response.ok)return true;
+  if(response.status===503){
+    setSyncStatus("端末内保存（同期設定待ち）","warn");
+    return false;
+  }
+  alert("同期コードが違います。");
+  return false;
+}
+async function authorizedEntriesResponse(askForCode=true){
+  let response=await cloudFetch("/api/entries");
+  if(response.status===401 && askForCode){
+    if(!await authenticateCloud())return null;
+    response=await cloudFetch("/api/entries");
+  }
+  return response;
+}
+function queueCloudOp(op){
+  const pending=getPending();
+  pending.push({...op,queuedAt:Date.now()});
+  setPending(pending);
+  if(syncReady)flushPending().catch(()=>{});
+}
+async function postCloudOp(op){
+  const response=await cloudFetch("/api/entries",{
+    method:"POST",
+    headers:{"Content-Type":"application/json"},
+    body:JSON.stringify(op)
+  });
+  if(response.status===401){
+    syncReady=false;
+    throw new Error("unauthorized");
+  }
+  if(!response.ok)throw new Error("sync failed");
+  return response.json();
+}
+async function flushPending(){
+  const pending=getPending();
+  while(pending.length){
+    await postCloudOp(pending[0]);
+    pending.shift();
+    setPending(pending);
+  }
+}
+function refreshVisibleEntries(){
+  renderCalendar();
+  renderSelectedDay();
+  if(!$("historyView").classList.contains("hidden"))renderHistory();
+}
+async function runCloudSync(askForCode=true){
+  setSyncStatus("同期確認中…");
+  let response=await authorizedEntriesResponse(askForCode);
+  if(!response){
+    setSyncStatus("端末内保存","warn");
+    return;
+  }
+  if(response.status===503){
+    setSyncStatus("端末内保存（同期設定待ち）","warn");
+    return;
+  }
+  if(response.status===401){
+    setSyncStatus("同期コードが必要","warn");
+    return;
+  }
+  if(!response.ok)throw new Error("sync unavailable");
+
+  if(localStorage.getItem(MIGRATED_KEY)!=="1"){
+    await postCloudOp({action:"merge",entries:getEntries()});
+    localStorage.setItem(MIGRATED_KEY,"1");
+  }
+
+  syncReady=true;
+  await flushPending();
+  response=await cloudFetch("/api/entries");
+  if(!response.ok)throw new Error("sync refresh failed");
+  const data=await response.json();
+  setEntries(Array.isArray(data.entries)?data.entries:[]);
+  refreshVisibleEntries();
+  setSyncStatus("クラウド同期済み","ok");
+}
+function initCloudSync(askForCode=true){
+  if(syncPromise)return syncPromise;
+  syncPromise=runCloudSync(askForCode)
+    .catch(()=>{
+      syncReady=false;
+      setSyncStatus(navigator.onLine?"同期できません":"オフライン保存中","warn");
+    })
+    .finally(()=>{syncPromise=null});
+  return syncPromise;
+}
+window.addEventListener("online",()=>initCloudSync(false));
 function show(id){
   ["calendarView","typeView","formView","historyView"].forEach(v=>$(v).classList.add("hidden"));
   $(id).classList.remove("hidden");
@@ -365,6 +486,7 @@ async function saveEntry(){
     moonOffset: currentType==="予定" ? (parseInt(val("moonOffset")||"0",10)||0) : 0
   };
   const es=getEntries();es.unshift(entry);setEntries(es);
+  queueCloudOp({action:"upsert",entry});
   selectedDate=entry.date;
   const [y,m]=selectedDate.split("-").map(Number);currentMonth=new Date(y,m-1,1);
   showCalendar();
@@ -390,12 +512,15 @@ function renderHistory(){
 }
 function deleteEntry(id){
   if(!confirm("この記録を削除しますか？"))return;
-  setEntries(getEntries().filter(e=>e.id!==id));
+  setEntries(getEntries().filter(e=>String(e.id)!==String(id)));
+  queueCloudOp({action:"delete",id});
   renderCalendar();renderSelectedDay();renderHistory();
 }
 function clearAll(){
   if(!confirm("すべての記録を削除します。元に戻せません。"))return;
-  localStorage.removeItem("farmLogEntries");renderHistory();renderCalendar();renderSelectedDay();
+  localStorage.removeItem(ENTRY_KEY);
+  queueCloudOp({action:"clear"});
+  renderHistory();renderCalendar();renderSelectedDay();
 }
 function exportCSV(){
   const rows=[["日付","時刻","作業","作物","場所","詳細","量1","量2","メモ"]];
@@ -464,6 +589,7 @@ function applyMoonRuleToDate(){
 
 $("todayText").textContent=new Intl.DateTimeFormat("ja-JP",{dateStyle:"full"}).format(new Date());
 showCalendar();
+initCloudSync(true);
 if("serviceWorker" in navigator){
   window.addEventListener("load",()=>navigator.serviceWorker.register("./sw.js").catch(()=>{}));
 }
