@@ -1,4 +1,4 @@
-const CACHE='farm-log-moon-v4';
+const CACHE='farm-log-cloud-v5';
 const ASSETS=['./','./index.html','./manifest.webmanifest'];
 self.addEventListener('install',event=>{
   self.skipWaiting();
@@ -12,6 +12,8 @@ self.addEventListener('activate',event=>{
 });
 self.addEventListener('fetch',event=>{
   if(event.request.method!=='GET') return;
+  const url=new URL(event.request.url);
+  if(url.pathname.startsWith('/api/')) return;
   event.respondWith(
     fetch(event.request).then(response=>{
       if(response.ok){
