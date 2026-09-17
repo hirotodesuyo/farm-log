@@ -132,6 +132,7 @@
     </div>
     <div class="header-actions">
       <button class="sync-status" id="syncStatus" onclick="configureSync()">同期設定</button>
+      <button class="iconbtn" onclick="manualRefresh()" aria-label="更新" title="最新データに更新">↻</button>
       <button class="iconbtn" onclick="goToday()" aria-label="今日">◎</button>
     </div>
   </div>
@@ -340,6 +341,10 @@ async function configureSync(){
   localStorage.removeItem("farmLogCloudInitialized");
   await initializeSync();
   if($("syncStatus").classList.contains("error"))alert("同期できません。同期コードまたは通信状態を確認してください。");
+}
+async function manualRefresh(){
+  if(!syncKey()){await configureSync();return}
+  await initializeSync();
 }
 function show(id){
   ["calendarView","typeView","formView","historyView"].forEach(v=>$(v).classList.add("hidden"));
