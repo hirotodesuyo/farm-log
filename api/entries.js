@@ -4,19 +4,17 @@ import { timingSafeEqual } from "node:crypto";
 const DATA_PATH = "farm-log/entries.json";
 const MAX_ENTRIES = 10000;
 
-function json(data, status = 200) {
-  return Response.json(data, {
-    status,
-    headers: {
-      "Cache-Control": "private, no-store",
-      "X-Content-Type-Options": "nosniff",
-    },
-  });
+function sendJson(response, data, status = 200) {
+  response.statusCode = status;
+  response.setHeader("Content-Type", "application/json; charset=utf-8");
+  response.setHeader("Cache-Control", "private, no-store");
+  response.setHeader("X-Content-Type-Options", "nosniff");
+  response.end(JSON.stringify(data));
 }
 
 function authorized(request) {
   const expected = process.env.FARM_LOG_SYNC_KEY;
-  const supplied = request.headers.get("x-farm-log-key") || "";
+  const supplied = request.headers["x-farm-log-key"] || "";
   if (!expected || !supplied) return false;
   const a = Buffer.from(expected);
   const b = Buffer.from(supplied);
@@ -39,31 +37,33 @@ async function readEntries() {
   return Array.isArray(stored) ? stored : stored.entries || [];
 }
 
-export default async function handler(request) {
+export default async function handler(request, response) {
   if (!process.env.FARM_LOG_SYNC_KEY) {
-    return json({ error: "同期コードがVercelに設定されていません" }, 503);
+    return sendJson(response, { error: "同期コードがVercelに設定されていません" }, 503);
   }
   if (!authorized(request)) {
-    return json({ error: "同期コードが違います" }, 401);
+    return sendJson(response, { error: "同期コードが違います" }, 401);
   }
 
   try {
     if (request.method === "GET") {
-      return json({ entries: await readEntries() });
+      return sendJson(response, { entries: await readEntries() });
     }
 
     if (request.method === "PUT") {
-      const contentLength = Number(request.headers.get("content-length") || 0);
+      const contentLength = Number(request.headers["content-length"] || 0);
       if (contentLength > 4_000_000) {
-        return json({ error: "写真を含むデータ量が上限を超えています" }, 413);
+        return sendJson(response, { error: "写真を含むデータ量が上限を超えています" }, 413);
       }
 
-      const body = await request.json();
+      const body = typeof request.body === "string"
+        ? JSON.parse(request.body)
+        : request.body;
       if (!body || !Array.isArray(body.entries)) {
-        return json({ error: "日誌データの形式が正しくありません" }, 400);
+        return sendJson(response, { error: "日誌データの形式が正しくありません" }, 400);
       }
       if (body.entries.length > MAX_ENTRIES) {
-        return json({ error: "記録件数が上限を超えています" }, 413);
+        return sendJson(response, { error: "記録件数が上限を超えています" }, 413);
       }
 
       const payload = JSON.stringify({
@@ -80,12 +80,12 @@ export default async function handler(request) {
         cacheControlMaxAge: 60,
       });
 
-      return json({ ok: true, count: body.entries.length });
+      return sendJson(response, { ok: true, count: body.entries.length });
     }
 
-    return json({ error: "Method not allowed" }, 405);
+    return sendJson(response, { error: "Method not allowed" }, 405);
   } catch (error) {
     console.error("farm-log sync error", error);
-    return json({ error: "クラウド同期に失敗しました" }, 500);
+    return sendJson(response, { error: "クラウド同期に失敗しました" }, 500);
   }
 }
