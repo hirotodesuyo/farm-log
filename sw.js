@@ -1,4 +1,4 @@
-const CACHE='farm-log-cloud-v5';
+const CACHE='farm-log-cloud-v6';
 const ASSETS=['./','./index.html','./manifest.webmanifest'];
 self.addEventListener('install',event=>{
   self.skipWaiting();
