@@ -35,6 +35,13 @@
     .header-row{display:flex;justify-content:space-between;align-items:center;gap:10px}
     h1{font-size:21px;margin:0}
     .sub{font-size:12px;color:var(--sub);margin-top:3px}
+    .header-actions{display:flex;align-items:center;gap:5px}
+    .sync-status{
+      border:1px solid var(--line);background:#fff;color:var(--sub);border-radius:99px;
+      padding:7px 10px;font-size:12px;white-space:nowrap
+    }
+    .sync-status.ok{color:var(--accent);background:var(--accent-soft);border-color:#cbdccb}
+    .sync-status.error{color:var(--danger);background:#fff3f3;border-color:#eccaca}
     main{max-width:760px;margin:auto;padding:12px 12px calc(95px + env(safe-area-inset-bottom))}
     .card{background:var(--card);border-radius:20px;padding:14px;box-shadow:var(--shadow);margin-bottom:12px}
     .month-head{display:grid;grid-template-columns:46px 1fr 46px;align-items:center;margin-bottom:10px}
@@ -123,7 +130,10 @@
       <h1>農作業日誌</h1>
       <div class="sub" id="todayText"></div>
     </div>
-    <button class="iconbtn" onclick="goToday()" aria-label="今日">◎</button>
+    <div class="header-actions">
+      <button class="sync-status" id="syncStatus" onclick="configureSync()">同期設定</button>
+      <button class="iconbtn" onclick="goToday()" aria-label="今日">◎</button>
+    </div>
   </div>
 </header>
 
@@ -250,7 +260,87 @@ function jpDate(dateStr){
 }
 function localTime(d=new Date()){return `${pad(d.getHours())}:${pad(d.getMinutes())}`}
 function getEntries(){try{return JSON.parse(localStorage.getItem("farmLogEntries")||"[]")}catch(e){return []}}
-function setEntries(v){localStorage.setItem("farmLogEntries",JSON.stringify(v))}
+function setEntries(v,{sync=true}={}){
+  localStorage.setItem("farmLogEntries",JSON.stringify(v));
+  if(sync){localStorage.setItem("farmLogPendingSync","1");queueSync()}
+}
+
+let syncTimer=null;
+function syncKey(){return localStorage.getItem("farmLogSyncKey")||""}
+function setSyncStatus(text,state=""){
+  const el=$("syncStatus");
+  el.textContent=text;
+  el.className=`sync-status ${state}`.trim();
+}
+async function cloudRequest(method,entries){
+  const options={method,headers:{"x-farm-log-key":syncKey()}};
+  if(entries){
+    options.headers["content-type"]="application/json";
+    options.body=JSON.stringify({entries});
+  }
+  const response=await fetch("/api/entries",options);
+  const data=await response.json().catch(()=>({}));
+  if(!response.ok) throw new Error(data.error||`同期エラー (${response.status})`);
+  return data;
+}
+async function pushEntries(){
+  if(!syncKey()){setSyncStatus("同期設定");return}
+  setSyncStatus("同期中…");
+  try{
+    await cloudRequest("PUT",getEntries());
+    localStorage.removeItem("farmLogPendingSync");
+    localStorage.setItem("farmLogCloudInitialized","1");
+    setSyncStatus("同期済み","ok");
+  }catch(error){
+    console.error(error);setSyncStatus("同期失敗","error");
+  }
+}
+function queueSync(){
+  clearTimeout(syncTimer);
+  syncTimer=setTimeout(pushEntries,350);
+}
+async function initializeSync(){
+  if(!syncKey()){setSyncStatus("同期設定");return}
+  setSyncStatus("読込中…");
+  try{
+    const remote=(await cloudRequest("GET")).entries||[];
+    const local=getEntries();
+    const initialized=localStorage.getItem("farmLogCloudInitialized")==="1";
+    const pending=localStorage.getItem("farmLogPendingSync")==="1";
+    if(!initialized&&local.length){
+      const merged=[...local];
+      const ids=new Set(local.map(e=>String(e.id)));
+      remote.forEach(e=>{if(!ids.has(String(e.id)))merged.push(e)});
+      setEntries(merged,{sync:false});
+      await cloudRequest("PUT",merged);
+      localStorage.removeItem("farmLogPendingSync");
+    }else if(pending){
+      await cloudRequest("PUT",local);
+      localStorage.removeItem("farmLogPendingSync");
+    }else{
+      setEntries(remote,{sync:false});
+    }
+    localStorage.setItem("farmLogCloudInitialized","1");
+    setSyncStatus("同期済み","ok");
+    renderCalendar();renderSelectedDay();
+    if(!$("historyView").classList.contains("hidden"))renderHistory();
+  }catch(error){
+    console.error(error);setSyncStatus("同期失敗","error");
+  }
+}
+async function configureSync(){
+  const key=prompt("同期コードを入力してください",syncKey());
+  if(key===null)return;
+  if(!key.trim()){
+    localStorage.removeItem("farmLogSyncKey");
+    localStorage.removeItem("farmLogCloudInitialized");
+    setSyncStatus("同期設定");return;
+  }
+  localStorage.setItem("farmLogSyncKey",key.trim());
+  localStorage.removeItem("farmLogCloudInitialized");
+  await initializeSync();
+  if($("syncStatus").classList.contains("error"))alert("同期できません。同期コードまたは通信状態を確認してください。");
+}
 function show(id){
   ["calendarView","typeView","formView","historyView"].forEach(v=>$(v).classList.add("hidden"));
   $(id).classList.remove("hidden");
@@ -395,7 +485,7 @@ function deleteEntry(id){
 }
 function clearAll(){
   if(!confirm("すべての記録を削除します。元に戻せません。"))return;
-  localStorage.removeItem("farmLogEntries");renderHistory();renderCalendar();renderSelectedDay();
+  setEntries([]);renderHistory();renderCalendar();renderSelectedDay();
 }
 function exportCSV(){
   const rows=[["日付","時刻","作業","作物","場所","詳細","量1","量2","メモ"]];
@@ -464,6 +554,7 @@ function applyMoonRuleToDate(){
 
 $("todayText").textContent=new Intl.DateTimeFormat("ja-JP",{dateStyle:"full"}).format(new Date());
 showCalendar();
+initializeSync();
 if("serviceWorker" in navigator){
   window.addEventListener("load",()=>navigator.serviceWorker.register("./sw.js").catch(()=>{}));
 }
