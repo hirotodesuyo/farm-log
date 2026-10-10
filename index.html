@@ -180,6 +180,13 @@
   <section id="formView" class="hidden">
     <div class="card">
       <div class="section-title"><h2 id="formTitle">記録</h2></div>
+      <div id="editTypeField" class="hidden">
+        <label for="editType">作業分類</label>
+        <select id="editType" onchange="changeEditType()">
+          <option>収穫</option><option>灌水</option><option>液肥</option>
+          <option>防除</option><option>生育</option><option>その他</option><option>予定</option>
+        </select>
+      </div>
       <div class="row">
         <div><label>日付</label><input type="date" id="date"></div>
         <div><label>時刻</label><input type="time" id="time"></div>
@@ -191,6 +198,7 @@
       <label>場所</label>
       <select id="place">
         <option>1号ハウス</option><option>2号ハウス</option><option>3号ハウス</option>
+        <option>井戸島ハウス</option><option>高山寺ハウス</option>
         <option>育苗</option><option>露地・その他</option>
       </select>
       <div id="dynamicFields"></div>
@@ -213,8 +221,12 @@
       <textarea id="note" placeholder="葉色、病害虫、気づいたことなど"></textarea>
       <label>写真</label>
       <input type="file" id="photo" accept="image/*" capture="environment">
-      <button class="primary" onclick="saveEntry()">保存</button>
-      <button class="secondary" onclick="showCalendar()">キャンセル</button>
+      <div id="existingPhoto" class="hidden">
+        <img id="existingPhotoPreview" class="entry-photo" alt="登録済みの写真">
+        <label><input type="checkbox" id="removePhoto" style="width:auto"> 登録済みの写真を削除する</label>
+      </div>
+      <button class="primary" id="saveButton" onclick="saveEntry()">保存</button>
+      <button class="secondary" onclick="cancelForm()">キャンセル</button>
     </div>
   </section>
 
@@ -251,6 +263,62 @@ let currentMonth = new Date();
 currentMonth.setDate(1);
 let selectedDate = localDate();
 let currentType="", currentEmoji="";
+let editingId=null, editingPhoto="", editReturnView="calendarView", saving=false;
+const typeEmojis={"収穫":"🍓","灌水":"💧","液肥":"🧪","防除":"🐛","生育":"🌱","その他":"🔧","予定":"🗓️"};
+
+function resetEditing(){
+  editingId=null;editingPhoto="";
+  $("editTypeField").classList.add("hidden");
+  $("existingPhoto").classList.add("hidden");
+  $("existingPhotoPreview").removeAttribute("src");
+  $("removePhoto").checked=false;
+  $("saveButton").textContent="保存";
+}
+function cancelForm(){
+  const returnView=editingId!==null?editReturnView:"calendarView";
+  resetEditing();
+  if(returnView==="historyView")showHistory();else showCalendar();
+}
+function setSelectValue(id,value){
+  const select=$(id), text=String(value??"");
+  if(!Array.from(select.options).some(option=>option.value===text)){
+    const option=document.createElement("option");option.value=text;option.textContent=text;
+    select.appendChild(option);
+  }
+  select.value=text;
+}
+function editEntry(id){
+  const entry=getEntries().find(e=>String(e.id)===String(id));
+  if(!entry){alert("この記録は見つかりません。更新して確認してください。");return}
+  const returnView=!$("historyView").classList.contains("hidden")?"historyView":"calendarView";
+  if(entry.planned||entry.type==="予定")openPlanForm();else openForm(entry.type,entry.emoji||typeEmojis[entry.type]||"🔧");
+  editingId=entry.id;editingPhoto=entry.photo||"";editReturnView=returnView;
+  $("formTitle").textContent=`${currentEmoji} ${currentType}を編集`;
+  $("editTypeField").classList.remove("hidden");
+  setSelectValue("editType",currentType);
+  ["date","time","detail","amount","subamount","note","moonRule","moonOffset"].forEach(id=>{
+    if($(id)){
+      const value=entry[id]??(id==="moonOffset"?0:"");
+      if($(id).tagName==="SELECT")setSelectValue(id,value);else $(id).value=value;
+    }
+  });
+  setSelectValue("crop",entry.crop);setSelectValue("place",entry.place);
+  if(editingPhoto){
+    $("existingPhotoPreview").src=editingPhoto;
+    $("existingPhoto").classList.remove("hidden");
+  }
+  $("saveButton").textContent="変更を保存";
+}
+function changeEditType(){
+  const values={detail:val("detail"),amount:val("amount"),subamount:val("subamount")};
+  currentType=val("editType");currentEmoji=typeEmojis[currentType]||"🔧";
+  $("dynamicFields").innerHTML=currentType==="予定"?planFields():fieldsFor(currentType);
+  Object.entries(values).forEach(([id,value])=>{if($(id)){
+    if($(id).tagName==="SELECT")setSelectValue(id,value);else $(id).value=value;
+  }});
+  $("planOptions").classList.toggle("hidden",currentType!=="予定");
+  $("formTitle").textContent=`${currentEmoji} ${currentType}を編集`;
+}
 
 function pad(n){return String(n).padStart(2,"0")}
 function localDate(d=new Date()){return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`}
@@ -396,24 +464,19 @@ function renderSelectedDay(){
   $("selectedTitle").textContent=jpDate(selectedDate);
   const es=getEntries().filter(e=>e.date===selectedDate).sort((a,b)=>(a.time||"").localeCompare(b.time||""));
   $("entryCount").textContent=`${es.length}件`;
-  $("dayEntries").innerHTML=es.length?es.map(entryHTML).join(""):`<div class="emptymsg">この日の記録はありません。右下の＋から追加できます。</div>`;
+  $("dayEntries").innerHTML=es.length?es.map(e=>entryHTML(e)).join(""):`<div class="emptymsg">この日の記録はありません。右下の＋から追加できます。</div>`;
 }
 function openTypeChooser(){
   $("typeDateTitle").textContent=`${jpDate(selectedDate)} に追加`;
   show("typeView");
 }
 function openPlanForm(){
+  resetEditing();
   currentType="予定"; currentEmoji="🗓️";
   $("formTitle").textContent="🗓️ 予定を追加";
   $("date").value=selectedDate;
   $("time").value="";
-  $("dynamicFields").innerHTML=
-    `<label>予定内容</label><input type="text" id="detail" placeholder="例 防除・追肥・葉かき">
-     <label>作業分類</label>
-     <select id="amount">
-       <option value="">指定なし</option><option>収穫</option><option>灌水</option><option>液肥</option>
-       <option>防除</option><option>生育</option><option>その他</option>
-     </select>`;
+  $("dynamicFields").innerHTML=planFields();
   $("planOptions").classList.remove("hidden");
   $("moonRule").value="";
   $("moonOffset").value="0";
@@ -423,6 +486,7 @@ function openPlanForm(){
   show("formView");
 }
 function openForm(type,emoji){
+  resetEditing();
   currentType=type;currentEmoji=emoji;
   $("planOptions").classList.add("hidden");
   $("formTitle").textContent=`${emoji} ${type}`;
@@ -432,6 +496,12 @@ function openForm(type,emoji){
   $("note").value="";
   $("photo").value="";
   show("formView");
+}
+function planFields(){
+  return `<label>予定内容</label><input type="text" id="detail" placeholder="例 防除・追肥・葉かき">
+    <label>作業分類</label><select id="amount">
+    <option value="">指定なし</option><option>収穫</option><option>灌水</option><option>液肥</option>
+    <option>防除</option><option>生育</option><option>その他</option></select>`;
 }
 function fieldsFor(type){
   const field=(label,id,ph="",type="text")=>`<label>${label}</label><input type="${type}" id="${id}" placeholder="${ph}">`;
@@ -444,35 +514,58 @@ function fieldsFor(type){
 }
 function val(id){return $(id)?.value||""}
 async function saveEntry(){
-  const file=$("photo").files[0];
-  let photo="";
-  if(file){
-    photo=await new Promise(resolve=>{
-      const r=new FileReader();r.onload=()=>resolve(r.result);r.readAsDataURL(file);
-    });
-  }
-  const entry={
-    id:Date.now(),type:currentType,emoji:currentEmoji,date:val("date"),time:val("time"),
-    crop:val("crop"),place:val("place"),detail:val("detail"),amount:val("amount"),
-    subamount:val("subamount"),note:val("note"),photo,
-    planned: currentType==="予定",
-    moonRule: currentType==="予定" ? val("moonRule") : "",
-    moonOffset: currentType==="予定" ? (parseInt(val("moonOffset")||"0",10)||0) : 0
-  };
-  const es=getEntries();es.unshift(entry);setEntries(es);
-  selectedDate=entry.date;
-  const [y,m]=selectedDate.split("-").map(Number);currentMonth=new Date(y,m-1,1);
-  showCalendar();
+  if(saving)return;
+  if(!val("date")||!$("date").checkValidity()){alert("日付を入力してください。");return}
+  saving=true;$("saveButton").disabled=true;
+  try{
+    const es=getEntries();
+    const index=editingId===null?-1:es.findIndex(e=>String(e.id)===String(editingId));
+    if(editingId!==null&&index<0){alert("この記録は削除されています。更新して確認してください。");return}
+    const previous=index>=0?es[index]:null;
+    const targetId=editingId, returnView=previous?editReturnView:"calendarView";
+    const file=$("photo").files[0];
+    const entry={
+      ...previous,
+      id:previous?previous.id:Date.now(),type:currentType,emoji:currentEmoji,date:val("date"),time:val("time"),
+      crop:val("crop"),place:val("place"),detail:val("detail"),amount:val("amount"),
+      subamount:val("subamount"),note:val("note"),
+      photo:$("removePhoto").checked?"":(previous?.photo||editingPhoto),
+      planned: currentType==="予定",
+      moonRule: currentType==="予定" ? val("moonRule") : "",
+      moonOffset: currentType==="予定" ? (parseInt(val("moonOffset")||"0",10)||0) : 0
+    };
+    if(file){
+      entry.photo=await new Promise((resolve,reject)=>{
+        const r=new FileReader();r.onload=()=>resolve(r.result);r.onerror=()=>reject(new Error("写真を読み込めませんでした。"));r.readAsDataURL(file);
+      });
+    }
+    // Read again after an asynchronous photo load so other records are retained.
+    const latest=getEntries();
+    if(previous){
+      const latestIndex=latest.findIndex(e=>String(e.id)===String(targetId));
+      if(latestIndex<0){alert("この記録は削除されています。更新して確認してください。");return}
+      latest[latestIndex]={...latest[latestIndex],...entry};
+    }else latest.unshift(entry);
+    setEntries(latest);
+    selectedDate=entry.date;
+    const [y,m]=selectedDate.split("-").map(Number);currentMonth=new Date(y,m-1,1);
+    resetEditing();
+    if(returnView==="historyView")showHistory();else showCalendar();
+  }catch(error){console.error(error);alert(error.message||"保存できませんでした。空き容量を確認してください。")}
+  finally{saving=false;$("saveButton").disabled=false}
 }
-function entryHTML(e){
+function entryHTML(e,showDate=false){
   const bits=[e.crop,e.place,e.detail,e.amount,e.subamount].filter(Boolean).join(" / ");
   const moonRuleText = e.moonRule ? ` / ${moonRuleName(e.moonRule)}${e.moonOffset?` ${e.moonOffset>0?"+":""}${e.moonOffset}日`:""}` : "";
   return `<div class="entry ${e.planned?"planned":""}">
-    <div class="entry-title">${e.emoji||""} ${esc(e.type)} ${e.planned?`<span class="plan-badge">予定</span>`:""} <span style="font-weight:500;color:var(--sub)">${esc(e.time||"")}</span></div>
+    <div class="entry-title">${e.emoji||""} ${esc(e.type)} ${e.planned?`<span class="plan-badge">予定</span>`:""} <span style="font-weight:500;color:var(--sub)">${showDate?esc(e.date)+" ":""}${esc(e.time||"")}</span></div>
     <div class="entry-meta">${esc(bits)}${esc(moonRuleText)}</div>
     ${e.note?`<div class="entry-note">${esc(e.note)}</div>`:""}
     ${e.photo?`<img class="entry-photo" src="${e.photo}">`:""}
-    <div class="toolbar"><button onclick="deleteEntry(${e.id})">削除</button></div>
+    <div class="toolbar">
+      <button data-entry-id="${esc(e.id)}" onclick="editEntry(this.dataset.entryId)">編集</button>
+      <button class="danger" data-entry-id="${esc(e.id)}" onclick="deleteEntry(this.dataset.entryId)">削除</button>
+    </div>
   </div>`;
 }
 function renderHistory(){
@@ -481,11 +574,11 @@ function renderHistory(){
     const text=JSON.stringify(e).toLowerCase();
     return (!q||text.includes(q))&&(!f||e.type===f);
   }).sort((a,b)=>(b.date+b.time).localeCompare(a.date+a.time));
-  $("historyEntries").innerHTML=es.length?es.map(entryHTML).join(""):`<div class="emptymsg">該当する記録がありません。</div>`;
+  $("historyEntries").innerHTML=es.length?es.map(e=>entryHTML(e,true)).join(""):`<div class="emptymsg">該当する記録がありません。</div>`;
 }
 function deleteEntry(id){
   if(!confirm("この記録を削除しますか？"))return;
-  setEntries(getEntries().filter(e=>e.id!==id));
+  setEntries(getEntries().filter(e=>String(e.id)!==String(id)));
   renderCalendar();renderSelectedDay();renderHistory();
 }
 function clearAll(){
