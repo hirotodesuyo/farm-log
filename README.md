@@ -7,3 +7,7 @@
 - Private Blob Storeをプロジェクトへ接続
 - `FARM_LOG_SYNC_KEY`をProductionとPreviewの暗号化環境変数に設定
 - Blob SDKはVercel上ではOIDC認証を優先して使用
+
+## ChatGPTから日誌を記録する手順
+
+- [チャットが変わっても参照できる記録・保存確認手順](docs/chatgpt-farm-log.md)
